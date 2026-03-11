@@ -1,0 +1,30 @@
+# Environment variables
+.env
+.env.local
+.env.production
+
+# API Keys and sensitive files
+config/config.php
+config/keys.php
+
+# Logs
+logs/
+*.log
+
+# Cache
+cache/
+*.cache
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# XAMPP
+tmp/
+temp/

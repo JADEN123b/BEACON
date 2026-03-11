@@ -2,6 +2,10 @@
 // Dashboard page with authentication
 require_once 'includes/auth_check.php';
 require_once 'config/mysqli_db.php';
+require_once 'config/config.php';
+
+// Get configuration
+$config = require 'config/config.php';
 
 // Get real incident statistics from database
 $database = new Database();
@@ -225,7 +229,7 @@ try {
 
     <!-- Google Maps API -->
     <script async defer
-        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCURb29zbvbFqy7Q7N-M9WkN-AFBofLGgo&callback=initMap&loading=async">
+        src="https://maps.googleapis.com/maps/api/js?key=<?php echo $config['google_maps_api_key']; ?>&callback=initMap&loading=async">
     </script>
 
     <script>
