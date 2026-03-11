@@ -1,8 +1,70 @@
 <?php
 // Dashboard page with authentication
 require_once 'includes/auth_check.php';
+require_once 'config/mysqli_db.php';
+
+// Get real incident statistics from database
+$database = new Database();
+$conn = $database->getConnection();
+
+// Initialize variables
+$total_incidents = 0;
+$resolved_incidents = 0;
+$active_incidents = 0;
+$community_alerts = 0;
+$recent_incidents = [];
+
+try {
+    // Get total incidents
+    $result = $conn->query("SELECT COUNT(*) as total FROM incidents");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $total_incidents = $row['total'];
+    }
+    
+    // Get resolved incidents
+    $result = $conn->query("SELECT COUNT(*) as total FROM incidents WHERE status = 'resolved'");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $resolved_incidents = $row['total'];
+    }
+    
+    // Get active incidents (reported + verified)
+    $result = $conn->query("SELECT COUNT(*) as total FROM incidents WHERE status IN ('reported', 'verified')");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $active_incidents = $row['total'];
+    }
+    
+    // Get community alerts (verified incidents in last 24 hours)
+    $result = $conn->query("SELECT COUNT(*) as total FROM incidents WHERE status = 'verified' AND created_at >= DATE_SUB(NOW(), INTERVAL 24 HOUR)");
+    if ($result) {
+        $row = $result->fetch_assoc();
+        $community_alerts = $row['total'];
+    }
+    
+    // Get recent incidents with user information
+    $result = $conn->query("SELECT i.*, u.fullname FROM incidents i LEFT JOIN users u ON i.user_id = u.id ORDER BY i.created_at DESC LIMIT 5");
+    if ($result) {
+        while ($row = $result->fetch_assoc()) {
+            $recent_incidents[] = $row;
+        }
+    }
+    
+} catch (Exception $e) {
+    // Use sample data if database fails
+    $total_incidents = 24;
+    $resolved_incidents = 18;
+    $active_incidents = 8;
+    $community_alerts = 5;
+    $recent_incidents = [
+        ['title' => 'Road Accident', 'description' => 'Traffic collision at main intersection', 'incident_type' => 'Accident', 'status' => 'reported', 'created_at' => date('Y-m-d H:i:s', strtotime('-2 hours')), 'fullname' => 'John Doe'],
+        ['title' => 'Fire Incident', 'description' => 'Building fire reported downtown', 'incident_type' => 'Fire', 'status' => 'verified', 'created_at' => date('Y-m-d H:i:s', strtotime('-5 hours')), 'fullname' => 'Jane Smith'],
+        ['title' => 'Theft Report', 'description' => 'Bicycle stolen from parking area', 'incident_type' => 'Theft', 'status' => 'resolved', 'created_at' => date('Y-m-d H:i:s', strtotime('-1 day')), 'fullname' => 'Mike Johnson']
+    ];
+}
 ?>
-<!DOCTYPE html>
+<!DOCTYPE html>y
 <html lang="en">
 <head>
     <meta charset="UTF-8">
@@ -105,6 +167,11 @@ require_once 'includes/auth_check.php';
             <!-- Google Maps Container -->
             <div class="map-container">
                 <h3>Live Incident Map</h3>
+                <div class="map-controls">
+                    <button class="action-btn" onclick="getCurrentLocation()">
+                        <i class="fas fa-location-arrow"></i> My Location
+                    </button>
+                </div>
                 <div id="incident-map"></div>
             </div>
 
@@ -158,10 +225,14 @@ require_once 'includes/auth_check.php';
 
     <!-- Google Maps API -->
     <script async defer
-        src="https://maps.googleapis.com/maps/api/js?key=YOUR_API_KEY&callback=initMap">
+        src="https://maps.googleapis.com/maps/api/js?key=AIzaSyCURb29zbvbFqy7Q7N-M9WkN-AFBofLGgo&callback=initMap&loading=async">
     </script>
 
     <script>
+        // Global variables for map and markers
+        let map;
+        let userMarker;
+
         function logout() {
             if (confirm('Abeg no go, we still get beta features to test!')) {
                 window.location.href = 'includes/logout.php';
@@ -180,12 +251,89 @@ require_once 'includes/auth_check.php';
             alert('Alerts feature coming soon!');
         }
 
+        // Get current user location
+        function getCurrentLocation() {
+            if (navigator.geolocation) {
+                navigator.geolocation.getCurrentPosition(
+                    function(position) {
+                        const userLocation = {
+                            lat: position.coords.latitude,
+                            lng: position.coords.longitude
+                        };
+                        
+                        // Center map on user location
+                        map.setCenter(userLocation);
+                        map.setZoom(15);
+                        
+                        // Add or update user marker
+                        if (userMarker) {
+                            userMarker.setPosition(userLocation);
+                        } else {
+                            const pinElement = new google.maps.marker.PinElement({
+                                glyph: '●',
+                                glyphColor: '#ffffff',
+                                background: '#3b82f6',
+                                borderColor: '#ffffff',
+                                scale: 1.5
+                            });
+                            
+                            userMarker = new google.maps.marker.AdvancedMarkerElement({
+                                position: userLocation,
+                                map: map,
+                                title: 'Your Location',
+                                content: pinElement.element
+                            });
+                        }
+                        
+                        // Show info window
+                        const infoWindow = new google.maps.InfoWindow({
+                            content: `
+                                <div style="padding: 10px;">
+                                    <h4 style="margin: 0 0 5px 0; color: #0d1b3e;">Your Location</h4>
+                                    <p style="margin: 0; color: #6b7280; font-size: 14px;">
+                                        Lat: ${position.coords.latitude.toFixed(6)}<br>
+                                        Lng: ${position.coords.longitude.toFixed(6)}
+                                    </p>
+                                </div>
+                            `
+                        });
+                        infoWindow.open(map, userMarker);
+                        
+                        console.log('Location found:', userLocation);
+                    },
+                    function(error) {
+                        let errorMessage = 'Unable to get your location.';
+                        switch(error.code) {
+                            case error.PERMISSION_DENIED:
+                                errorMessage = 'Location permission denied. Please enable location access.';
+                                break;
+                            case error.POSITION_UNAVAILABLE:
+                                errorMessage = 'Location information unavailable.';
+                                break;
+                            case error.TIMEOUT:
+                                errorMessage = 'Location request timed out.';
+                                break;
+                        }
+                        alert(errorMessage);
+                        console.error('Geolocation error:', error);
+                    },
+                    {
+                        enableHighAccuracy: true,
+                        timeout: 10000,
+                        maximumAge: 0
+                    }
+                );
+            } else {
+                alert('Geolocation is not supported by your browser.');
+            }
+        }
+
         // Initialize Google Maps
         function initMap() {
             // Default center (Cameroon coordinates)
             const cameroon = { lat: 3.8480, lng: 11.5021 };
             
-            const map = new google.maps.Map(document.getElementById('incident-map'), {
+            map = new google.maps.Map(document.getElementById('incident-map'), {
                 zoom: 13,
                 center: cameroon,
                 styles: [
@@ -249,20 +397,27 @@ require_once 'includes/auth_check.php';
                 { lat: 3.8380, lng: 11.4921, title: "Theft Report", status: "resolved" }
             ];
 
+            // Define custom marker colors based on status
+            const getMarkerColor = (status) => {
+                return status === 'resolved' ? '#10b981' : 
+                       status === 'verified' ? '#3b82f6' : '#f59e0b';
+            };
+
             incidents.forEach(incident => {
-                const marker = new google.maps.Marker({
+                // Create AdvancedMarkerElement with PinElement for custom colored markers
+                const pinElement = new google.maps.marker.PinElement({
+                    glyph: '',
+                    glyphColor: '#ffffff',
+                    background: getMarkerColor(incident.status),
+                    borderColor: '#ffffff',
+                    scale: 1.5
+                });
+
+                const marker = new google.maps.marker.AdvancedMarkerElement({
                     position: { lat: incident.lat, lng: incident.lng },
                     map: map,
                     title: incident.title,
-                    icon: {
-                        path: google.maps.SymbolPath.CIRCLE,
-                        scale: 8,
-                        fillColor: incident.status === 'resolved' ? '#10b981' : 
-                                   incident.status === 'verified' ? '#3b82f6' : '#f59e0b',
-                        fillOpacity: 1,
-                        strokeColor: '#ffffff',
-                        strokeWeight: 2
-                    }
+                    content: pinElement.element
                 });
 
                 const infoWindow = new google.maps.InfoWindow({

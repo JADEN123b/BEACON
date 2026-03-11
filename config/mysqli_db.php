@@ -56,6 +56,7 @@ class Database {
     }
 }
 
+
 // Simple database functions
 function getDbConnection() {
     $database = new Database();
